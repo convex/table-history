@@ -1,23 +1,47 @@
-name: Run tests
+name: Test and lint
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 on:
+  workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
+    branches: ["**"]
+
+permissions: {}
+
 jobs:
-  build:
+  check:
+    name: Test and lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Use Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          cache-dependency-path: |
-            example/package.json
-            package.json
-          node-version: "18.x"
+          persist-credentials: false
+
+      - name: Node setup
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          cache-dependency-path: package-lock.json
+          node-version: "24.22.1"
           cache: "npm"
-      - run: npm i
-      - run: npm ci
-      - run: cd example && npm i && cd ..
-      - run: npm test
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+      - name: Test
+        run: npm run check
+      - name: Run E2E smoke test and verify generated code
+        env:
+          CONVEX_DISABLE_TELEMETRY: "1"
+        run: |
+          npm run test:e2e
+          git diff --exit-code -- src/component/_generated example/convex/_generated
+          test -z "$(git ls-files --others --exclude-standard src/component/_generated example/convex/_generated)"
